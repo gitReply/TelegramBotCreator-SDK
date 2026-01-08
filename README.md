@@ -145,12 +145,12 @@ Sets bot avatar via BotFather.
 
 ```
 .
-├── bot.py                 # Main bot application
-├── setup_telethon.py      # Telethon session setup
-├── requirements.txt       # Python dependencies
-├── .env.example          # Environment variables example
-├── .gitignore            # Git ignore file
-└── README.md             # This file
+├── bot.py
+├── setup_telethon.py
+├── requirements.txt
+├── .env.example
+├── .gitignore        
+└── README.md 
 ```
 
 ## Troubleshooting
@@ -188,3 +188,4 @@ MIT License
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
