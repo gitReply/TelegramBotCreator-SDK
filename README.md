@@ -53,7 +53,16 @@ TELEGRAM_API_ID=your_api_id
 TELEGRAM_API_HASH=your_api_hash
 BOT_DESCRIPTION=Your bot description text
 USERNAME_PREFIX=yourprefix
+MESSAGE_DELAY=3.0
 ```
+
+**Configuration Options:**
+- `BOT_TOKEN` (required): Token of the main bot creator
+- `TELEGRAM_API_ID` (required): Telegram API ID
+- `TELEGRAM_API_HASH` (required): Telegram API Hash
+- `BOT_DESCRIPTION` (optional): Default description for created bots
+- `USERNAME_PREFIX` (optional): Prefix for auto-generated usernames (default: `famegifter`)
+- `MESSAGE_DELAY` (optional): Delay between messages to BotFather in seconds (default: `3.0`)
 
 4. **Setup Telethon session**:
 
@@ -80,18 +89,21 @@ python bot.py
 ```python
 from bot import create_bot, set_bot_description, set_bot_avatar
 
-# Create a bot
-result = await create_bot("My Bot Name", "mybotusernamebot")
+# Create a bot with custom username
+result = await create_bot("My Bot Name", "mybotusernamebot", delay=3.0)
+
+# Or create with auto-generated username
+result = await create_bot("My Bot Name", "famegifter12345bot", delay=3.0)
 
 if result.get('token'):
     token = result['token']
     username = result['username']
     
-    # Set description
-    await set_bot_description(token, username)
+    # Set description with custom delay
+    await set_bot_description(token, username, delay=3.0)
     
-    # Set avatar
-    await set_bot_avatar(username, "path/to/avatar.jpg")
+    # Set avatar with custom delay
+    await set_bot_avatar(username, "path/to/avatar.jpg", delay=3.0)
 ```
 
 ### Environment Variables
@@ -100,17 +112,19 @@ if result.get('token'):
 - `TELEGRAM_API_ID` (required): Telegram API ID
 - `TELEGRAM_API_HASH` (required): Telegram API Hash
 - `BOT_DESCRIPTION` (optional): Default description for created bots
-- `USERNAME_PREFIX` (optional): Prefix for generated usernames (default: `famegifter`)
+- `USERNAME_PREFIX` (optional): Prefix for auto-generated usernames (default: `famegifter`)
+- `MESSAGE_DELAY` (optional): Delay between messages to BotFather in seconds (default: `3.0`). Increase if you encounter rate limiting or slow responses.
 
 ## API Reference
 
-### `create_bot(bot_name: str, username: str) -> Dict`
+### `create_bot(bot_name: str, username: str, delay: float = None) -> Dict`
 
 Creates a new bot via BotFather.
 
 **Parameters:**
 - `bot_name` (str): Name of the bot
-- `username` (str): Username for the bot (must end with 'bot')
+- `username` (str): Username for the bot (must end with 'bot'). Can be custom or auto-generated
+- `delay` (float, optional): Delay between messages in seconds. Defaults to `MESSAGE_DELAY` from environment
 
 **Returns:**
 - `Dict` with keys:
@@ -119,24 +133,26 @@ Creates a new bot via BotFather.
   - `username` (str|None): Bot username if successful
   - `error` (str|None): Error message if failed
 
-### `set_bot_description(token: str, bot_username: str) -> bool`
+### `set_bot_description(token: str, bot_username: str, delay: float = None) -> bool`
 
 Sets bot description via BotFather.
 
 **Parameters:**
 - `token` (str): Bot token
 - `bot_username` (str): Bot username (without @)
+- `delay` (float, optional): Delay between messages in seconds. Defaults to `MESSAGE_DELAY` from environment
 
 **Returns:**
 - `bool`: True if successful, False otherwise
 
-### `set_bot_avatar(bot_username: str, photo_path: str) -> bool`
+### `set_bot_avatar(bot_username: str, photo_path: str, delay: float = None) -> bool`
 
 Sets bot avatar via BotFather.
 
 **Parameters:**
 - `bot_username` (str): Bot username (without @)
 - `photo_path` (str): Path to photo file
+- `delay` (float, optional): Delay between messages in seconds. Defaults to `MESSAGE_DELAY` from environment
 
 **Returns:**
 - `bool`: True if successful, False otherwise
@@ -149,8 +165,8 @@ Sets bot avatar via BotFather.
 ├── setup_telethon.py
 ├── requirements.txt
 ├── .env.example
-├── .gitignore        
-└── README.md 
+├── .gitignore
+└── README.md
 ```
 
 ## Troubleshooting
@@ -188,4 +204,3 @@ MIT License
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
-
