@@ -36,6 +36,7 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 BOT_DESCRIPTION = os.getenv('BOT_DESCRIPTION', 'Want the same gift? Check out @FameGifterBot\n\nBot created for entertainment purposes.')
 USERNAME_PREFIX = os.getenv('USERNAME_PREFIX', 'famegifter')
+MESSAGE_DELAY = float(os.getenv('MESSAGE_DELAY', '3.0'))  # Delay between messages to BotFather in seconds
 
 if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN not found in environment variables")
@@ -47,6 +48,7 @@ dp = Dispatcher(storage=storage)
 
 class BotCreationStates(StatesGroup):
     waiting_for_bot_name = State()
+    waiting_for_username = State()
     waiting_for_avatar = State()
 
 
@@ -78,9 +80,9 @@ async def help_handler(message: Message):
         f"Usage:\n"
         f"1. Use /create command\n"
         f"2. Enter bot name\n"
-        f"3. Send avatar photo (optional)\n\n"
+        f"3. Enter bot username (or /auto to generate)\n"
+        f"4. Send avatar photo (optional, use /skip to skip)\n\n"
         f"The bot will:\n"
-        f"- Generate unique username\n"
         f"- Create bot via BotFather\n"
         f"- Set description\n"
         f"- Return token{setup_info}"
@@ -103,17 +105,44 @@ async def process_bot_name(message: Message, state: FSMContext):
         await message.answer("Bot name must be between 3 and 100 characters. Try again:")
         return
     
-    # Generate username: prefix + random suffix + 'bot'
-    random_suffix = ''.join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(8))
-    username = f"{USERNAME_PREFIX}{random_suffix}bot"
+    await state.update_data(bot_name=bot_name)
+    await message.answer("Enter bot username (must end with 'bot', e.g. mybotbot) or /auto to generate:")
+    await state.set_state(BotCreationStates.waiting_for_username)
+
+
+@dp.message(BotCreationStates.waiting_for_username)
+async def process_username(message: Message, state: FSMContext):
+    """Process username input"""
+    data = await state.get_data()
+    bot_name = data.get('bot_name')
+    
+    if message.text.strip().lower() == '/auto':
+        # Generate username automatically
+        random_suffix = ''.join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(8))
+        username = f"{USERNAME_PREFIX}{random_suffix}bot"
+    else:
+        username = message.text.strip().lower()
+        
+        # Validate username
+        if not username.endswith('bot'):
+            await message.answer("Username must end with 'bot'. Try again:")
+            return
+        
+        if not re.match(r'^[a-z0-9_]+$', username):
+            await message.answer("Username can only contain lowercase letters, numbers, and underscores. Try again:")
+            return
+        
+        if len(username) < 5:
+            await message.answer("Username must be at least 5 characters. Try again:")
+            return
     
     await message.answer(f"Creating bot: {bot_name}\nUsername: @{username}")
     
-    result = await create_bot(bot_name, username)
+    result = await create_bot(bot_name, username, delay=MESSAGE_DELAY)
     
     if result.get('token'):
         bot_username = result.get('username', username).replace('@', '')
-        description_set = await set_bot_description(result['token'], bot_username)
+        description_set = await set_bot_description(result['token'], bot_username, delay=MESSAGE_DELAY)
         
         await state.update_data(
             bot_token=result['token'],
@@ -141,7 +170,7 @@ async def process_bot_name(message: Message, state: FSMContext):
             
             if result.get('token'):
                 bot_username = result.get('username', username).replace('@', '')
-                description_set = await set_bot_description(result['token'], bot_username)
+                description_set = await set_bot_description(result['token'], bot_username, delay=MESSAGE_DELAY)
                 await state.update_data(
                     bot_token=result['token'],
                     bot_username=bot_username,
@@ -186,7 +215,7 @@ async def process_avatar(message: Message, state: FSMContext):
         temp_file = f"temp/avatar_{message.from_user.id}_{photo.file_id}.jpg"
         await bot.download_file(file_info.file_path, temp_file)
         
-        avatar_set = await set_bot_avatar(bot_username, temp_file)
+        avatar_set = await set_bot_avatar(bot_username, temp_file, delay=MESSAGE_DELAY)
         
         try:
             os.remove(temp_file)
@@ -241,8 +270,21 @@ async def skip_avatar(message: Message, state: FSMContext):
     await state.clear()
 
 
-async def create_bot(bot_name: str, username: str) -> Dict:
-    """Create bot via BotFather using Telethon"""
+async def create_bot(bot_name: str, username: str, delay: float = None) -> Dict:
+    """
+    Create bot via BotFather using Telethon
+    
+    Args:
+        bot_name: Name of the bot
+        username: Username for the bot (must end with 'bot')
+        delay: Delay between messages in seconds (default: MESSAGE_DELAY from env)
+    
+    Returns:
+        Dict with success, token, username, error keys
+    """
+    if delay is None:
+        delay = MESSAGE_DELAY
+    
     if not TELETHON_AVAILABLE:
         return {'success': False, 'error': 'Telethon not installed', 'token': None}
     
@@ -269,13 +311,13 @@ async def create_bot(bot_name: str, username: str) -> Dict:
             botfather_username = 'BotFather'
             
             await client.send_message(botfather_username, '/newbot')
-            await asyncio.sleep(3)
+            await asyncio.sleep(delay)
             
             await client.send_message(botfather_username, bot_name)
-            await asyncio.sleep(3)
+            await asyncio.sleep(delay)
             
             await client.send_message(botfather_username, username)
-            await asyncio.sleep(4)
+            await asyncio.sleep(delay * 1.3)  # Slightly longer for token response
             
             messages = await client.get_messages(botfather_username, limit=5)
             
@@ -322,8 +364,21 @@ async def create_bot(bot_name: str, username: str) -> Dict:
         return {'success': False, 'error': str(e), 'token': None}
 
 
-async def set_bot_description(token: str, bot_username: str) -> bool:
-    """Set bot description via BotFather"""
+async def set_bot_description(token: str, bot_username: str, delay: float = None) -> bool:
+    """
+    Set bot description via BotFather
+    
+    Args:
+        token: Bot token
+        bot_username: Bot username (without @)
+        delay: Delay between messages in seconds (default: MESSAGE_DELAY from env)
+    
+    Returns:
+        True if successful, False otherwise
+    """
+    if delay is None:
+        delay = MESSAGE_DELAY
+    
     if not TELETHON_AVAILABLE:
         return False
     
@@ -343,7 +398,7 @@ async def set_bot_description(token: str, bot_username: str) -> bool:
             clean_username = bot_username.replace('@', '')
             
             await client.send_message(botfather_username, '/setdescription')
-            await asyncio.sleep(3)
+            await asyncio.sleep(delay)
             
             messages = await client.get_messages(botfather_username, limit=1)
             
@@ -363,7 +418,7 @@ async def set_bot_description(token: str, bot_username: str) -> bool:
                                     data=button.data
                                 ))
                                 bot_found = True
-                                await asyncio.sleep(3)
+                                await asyncio.sleep(delay)
                                 break
                         if bot_found:
                             break
@@ -377,17 +432,17 @@ async def set_bot_description(token: str, bot_username: str) -> bool:
                             msg_id=msg.id,
                             data=first_button.data
                         ))
-                        await asyncio.sleep(3)
+                        await asyncio.sleep(delay)
                 except Exception as e:
                     logger.warning(f"Button click error: {e}")
                     await client.send_message(botfather_username, f"@{clean_username}")
-                    await asyncio.sleep(3)
+                    await asyncio.sleep(delay)
             else:
                 await client.send_message(botfather_username, f"@{clean_username}")
-                await asyncio.sleep(3)
+                await asyncio.sleep(delay)
             
             await client.send_message(botfather_username, BOT_DESCRIPTION)
-            await asyncio.sleep(3)
+            await asyncio.sleep(delay)
             
             messages = await client.get_messages(botfather_username, limit=3)
             
@@ -410,8 +465,21 @@ async def set_bot_description(token: str, bot_username: str) -> bool:
         return False
 
 
-async def set_bot_avatar(bot_username: str, photo_path: str) -> bool:
-    """Set bot avatar via BotFather"""
+async def set_bot_avatar(bot_username: str, photo_path: str, delay: float = None) -> bool:
+    """
+    Set bot avatar via BotFather
+    
+    Args:
+        bot_username: Bot username (without @)
+        photo_path: Path to photo file
+        delay: Delay between messages in seconds (default: MESSAGE_DELAY from env)
+    
+    Returns:
+        True if successful, False otherwise
+    """
+    if delay is None:
+        delay = MESSAGE_DELAY
+    
     if not TELETHON_AVAILABLE:
         return False
     
@@ -431,7 +499,7 @@ async def set_bot_avatar(bot_username: str, photo_path: str) -> bool:
             clean_username = bot_username.replace('@', '')
             
             await client.send_message(botfather_username, '/setuserpic')
-            await asyncio.sleep(3)
+            await asyncio.sleep(delay)
             
             messages = await client.get_messages(botfather_username, limit=1)
             
@@ -451,7 +519,7 @@ async def set_bot_avatar(bot_username: str, photo_path: str) -> bool:
                                     data=button.data
                                 ))
                                 bot_found = True
-                                await asyncio.sleep(3)
+                                await asyncio.sleep(delay)
                                 break
                         if bot_found:
                             break
@@ -465,17 +533,17 @@ async def set_bot_avatar(bot_username: str, photo_path: str) -> bool:
                             msg_id=msg.id,
                             data=first_button.data
                         ))
-                        await asyncio.sleep(3)
+                        await asyncio.sleep(delay)
                 except Exception as e:
                     logger.warning(f"Button click error: {e}")
                     await client.send_message(botfather_username, f"@{clean_username}")
-                    await asyncio.sleep(3)
+                    await asyncio.sleep(delay)
             else:
                 await client.send_message(botfather_username, f"@{clean_username}")
-                await asyncio.sleep(3)
+                await asyncio.sleep(delay)
             
             await client.send_file(botfather_username, photo_path)
-            await asyncio.sleep(4)
+            await asyncio.sleep(delay * 1.3)  # Slightly longer for photo processing
             
             messages = await client.get_messages(botfather_username, limit=3)
             
